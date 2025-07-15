@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Culinary Arts Quiz</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals -->
+    <!-- Application Structure Plan: The quiz is structured as a linear progression of questions, presented one at a time. This design focuses on a clear, guided user experience for assessment. Users interact by selecting answers and progressing through questions, culminating in a final score. LLM-powered features for answer explanation and new question generation are integrated to enhance learning and extend quiz longevity. -->
+    <!-- Visualization & Content Choices: 
+        Report Info: Syllabus Content -> Goal: Assess Knowledge -> Viz: Text questions, multiple-choice buttons -> Interaction: Click to select answer, click "Next" to advance -> Justification: Standard quiz format for direct assessment of understanding. Library/Method: Vanilla JS DOM manipulation.
+        Report Info: Quiz Feedback -> Goal: Inform -> Viz: Dynamic text messages (Correct/Incorrect) -> Interaction: Automatic display after answer selection -> Justification: Provides immediate, clear feedback to reinforce learning. Library/Method: Vanilla JS DOM manipulation.
+        Report Info: Score Tracking -> Goal: Inform -> Viz: Numeric score display -> Interaction: Updates dynamically -> Justification: Quantifies performance and provides a clear outcome. Library/Method: Vanilla JS variable tracking.
+        Report Info: Answer Explanation (New) -> Goal: Deepen Understanding -> Viz: Text explanation from LLM -> Interaction: Click "Explain Answer" button -> Justification: Provides on-demand, detailed context for learning from mistakes or reinforcing correct answers. Library/Method: Gemini API (gemini-2.0-flash) for text generation.
+        Report Info: New Question Generation (New) -> Goal: Extend Practice -> Viz: New question and answers from LLM -> Interaction: Click "Generate New Question" button -> Justification: Offers unlimited, dynamic practice by creating new quiz content on demand. Library/Method: Gemini API (gemini-2.0-flash) for structured JSON generation.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .quiz-container { max-width: 600px; margin: 4rem auto; padding: 2rem; background-color: #ffffff; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1); }
+        .answer-btn {
+            background-color: #f1f5f9; /* slate-100 */
+            color: #475569; /* slate-600 */
+            border: 1px solid #cbd5e1; /* slate-300 */
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+            text-align: left;
+            width: 100%;
+        }
+        .answer-btn:hover:not(.selected):not(.correct):not(.incorrect) {
+            background-color: #e2e8f0; /* slate-200 */
+        }
+        .answer-btn.selected {
+            border-color: #f59e0b; /* amber-500 */
+            background-color: #fffbeb; /* amber-50 */
+            color: #f59e0b; /* amber-500 */
+        }
+        .answer-btn.correct {
+            background-color: #d1fae5; /* green-100 */
+            border-color: #34d399; /* green-500 */
+            color: #065f46; /* green-800 */
+        }
+        .answer-btn.incorrect {
+            background-color: #fee2e2; /* red-100 */
+            border-color: #ef4444; /* red-500 */
+            color: #991b1b; /* red-800 */
+        }
+        .feedback-message.correct { color: #10b981; /* green-500 */ }
+        .feedback-message.incorrect { color: #ef4444; /* red-500 */ }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #f59e0b;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div class="quiz-container">
+        <h1 class="text-3xl font-bold text-center mb-6 text-slate-900">Culinary Arts Quiz</h1>
+        <div id="quiz-screen" class="space-y-6">
+            <div id="question-container">
+                <p class="text-lg font-semibold mb-4" id="question-text"></p>
+                <div id="answers-container" class="grid grid-cols-1 gap-3"></div>
+            </div>
+            <div id="feedback-container" class="min-h-[40px] flex items-center justify-center relative">
+                <p id="feedback-message" class="text-md font-medium"></p>
+                <button id="explain-btn" class="absolute right-0 top-1/2 -translate-y-1/2 bg-amber-100 text-amber-700 text-sm py-1 px-3 rounded-full font-semibold hover:bg-amber-200 transition-colors duration-200" style="display: none;">✨ Explain Answer</button>
+            </div>
+            <div id="explanation-container" class="bg-slate-100 p-4 rounded-md text-sm text-slate-700 mt-4" style="display: none;">
+                <div class="loading-spinner" id="explanation-loading"></div>
+                <p id="explanation-text"></p>
+            </div>
+            <button id="next-btn" class="w-full bg-amber-500 text-white py-3 rounded-md font-semibold hover:bg-amber-600 transition-colors duration-200" style="display: none;">Next Question</button>
+        </div>
+
+        <div id="result-screen" class="text-center space-y-6" style="display: none;">
+            <h2 class="text-2xl font-bold text-slate-900">Quiz Complete!</h2>
+            <p class="text-xl">Your Score: <span id="score-display" class="font-bold text-amber-600"></span> / <span id="total-questions-display" class="font-bold text-slate-700"></span></p>
+            <button id="generate-new-question-btn" class="w-full bg-blue-500 text-white py-3 rounded-md font-semibold hover:bg-blue-600 transition-colors duration-200 mt-4">✨ Generate New Question</button>
+            <div class="loading-spinner" id="generate-loading"></div>
+            <button id="restart-btn" class="w-full bg-slate-700 text-white py-3 rounded-md font-semibold hover:bg-slate-800 transition-colors duration-200 mt-2">Restart Quiz</button>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let questions = [
+        {
+            question: "According to the syllabus, what is the required certification students must obtain before participating in cooking?",
+            answers: [
+                { text: "ServSafe Manager Certification", correct: false },
+                { text: "Food Handlers Certification", correct: true },
+                { text: "Culinary Arts Diploma", correct: false },
+                { text: "First Aid Certification", correct: false }
+            ]
+        },
+        {
+            question: "What is NOT an acceptable hair restraint for kitchen work, as per FDA Food Code?",
+            answers: [
+                { text: "A chef's hat", correct: false },
+                { text: "A hairnet", correct: false },
+                { text: "A ponytail", correct: true },
+                { text: "A baseball cap", correct: false }
+            ]
+        },
+        {
+            question: "Which of the following mathematical skills is explicitly mentioned in the course description?",
+            answers: [
+                { text: "Calculus for recipe scaling", correct: false },
+                { text: "Algebra for inventory management", correct: false },
+                { text: "Baker’s percentages", correct: true },
+                { text: "Geometry for plate presentation", correct: false }
+            ]
+        },
+        {
+            question: "What is the deadline for completing the Food Handlers Certification?",
+            answers: [
+                { text: "By the end of the first month of school", correct: false },
+                { text: "Before the midterm exam", correct: false },
+                { text: "By the end of the second week of school", correct: true },
+                { text: "Anytime before the end of the semester", correct: false }
+            ]
+        },
+        {
+            question: "Which of these is a mandatory event students are required to participate in?",
+            answers: [
+                { text: "Concession at Football Games", correct: false },
+                { text: "Electives Showcase", correct: true },
+                { text: "School Bake Sale", correct: false },
+                { text: "Spring Food Festival", correct: false }
+            ]
+        }
+    ];
+
+    let currentQuestionIndex = 0;
+    let score = 0;
+    let selectedAnswerButton = null;
+
+    const questionText = document.getElementById('question-text');
+    const answersContainer = document.getElementById('answers-container');
+    const feedbackMessage = document.getElementById('feedback-message');
+    const nextButton = document.getElementById('next-btn');
+    const quizScreen = document.getElementById('quiz-screen');
+    const resultScreen = document.getElementById('result-screen');
+    const scoreDisplay = document.getElementById('score-display');
+    const totalQuestionsDisplay = document.getElementById('total-questions-display');
+    const restartButton = document.getElementById('restart-btn');
+    const explainButton = document.getElementById('explain-btn');
+    const explanationContainer = document.getElementById('explanation-container');
+    const explanationText = document.getElementById('explanation-text');
+    const explanationLoading = document.getElementById('explanation-loading');
+    const generateNewQuestionButton = document.getElementById('generate-new-question-btn');
+    const generateLoading = document.getElementById('generate-loading');
+
+    function showQuestion() {
+        resetQuizState();
+        const question = questions[currentQuestionIndex];
+        questionText.textContent = `${currentQuestionIndex + 1}. ${question.question}`;
+        
+        answersContainer.innerHTML = '';
+        question.answers.forEach((answer, index) => {
+            const button = document.createElement('button');
+            button.textContent = answer.text;
+            button.classList.add('answer-btn');
+            button.dataset.index = index;
+            button.addEventListener('click', selectAnswer);
+            answersContainer.appendChild(button);
+        });
+    }
+
+    function selectAnswer(event) {
+        if (selectedAnswerButton) {
+            return;
+        }
+
+        selectedAnswerButton = event.target;
+        selectedAnswerButton.classList.add('selected');
+        
+        const selectedAnswerIndex = parseInt(selectedAnswerButton.dataset.index);
+        const currentQuestion = questions[currentQuestionIndex];
+        
+        if (currentQuestion.answers[selectedAnswerIndex].correct) {
+            score++;
+            feedbackMessage.textContent = 'Correct!';
+            feedbackMessage.classList.add('correct');
+            selectedAnswerButton.classList.add('correct');
+        } else {
+            feedbackMessage.textContent = 'Incorrect.';
+            feedbackMessage.classList.add('incorrect');
+            selectedAnswerButton.classList.add('incorrect');
+            answersContainer.querySelectorAll('.answer-btn').forEach(btn => {
+                if (currentQuestion.answers[parseInt(btn.dataset.index)].correct) {
+                    btn.classList.add('correct');
+                }
+            });
+        }
+        
+        nextButton.style.display = 'block';
+        explainButton.style.display = 'block';
+        disableAnswerButtons();
+    }
+
+    function disableAnswerButtons() {
+        answersContainer.querySelectorAll('.answer-btn').forEach(button => {
+            button.removeEventListener('click', selectAnswer);
+            button.style.cursor = 'default';
+        });
+    }
+
+    function resetQuizState() {
+        feedbackMessage.textContent = '';
+        feedbackMessage.classList.remove('correct', 'incorrect');
+        nextButton.style.display = 'none';
+        explainButton.style.display = 'none';
+        explanationContainer.style.display = 'none';
+        explanationText.textContent = '';
+        selectedAnswerButton = null;
+    }
+
+    function showResult() {
+        quizScreen.style.display = 'none';
+        resultScreen.style.display = 'block';
+        scoreDisplay.textContent = score;
+        totalQuestionsDisplay.textContent = questions.length;
+        generateNewQuestionButton.style.display = 'block';
+    }
+
+    async function explainAnswer() {
+        explanationContainer.style.display = 'block';
+        explanationLoading.style.display = 'block';
+        explanationText.textContent = '';
+
+        const currentQuestion = questions[currentQuestionIndex];
+        const correctAnswer = currentQuestion.answers.find(ans => ans.correct).text;
+        const prompt = `Explain why "${correctAnswer}" is the correct answer to the question: "${currentQuestion.question}". Relate it to general culinary knowledge or common practices. Keep the explanation concise and easy to understand for a high school student.`;
+
+        let chatHistory = [];
+        chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+        const payload = { contents: chatHistory };
+        const apiKey = "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if (result.candidates && result.candidates.length > 0 &&
+                result.candidates[0].content && result.candidates[0].content.parts &&
+                result.candidates[0].content.parts.length > 0) {
+                explanationText.textContent = result.candidates[0].content.parts[0].text;
+            } else {
+                explanationText.textContent = 'Could not generate explanation. Please try again.';
+            }
+        } catch (error) {
+            explanationText.textContent = 'Error generating explanation. Please check your network connection.';
+            console.error('Error calling Gemini API for explanation:', error);
+        } finally {
+            explanationLoading.style.display = 'none';
+        }
+    }
+
+    async function generateNewQuestion() {
+        generateNewQuestionButton.style.display = 'none';
+        restartButton.style.display = 'none';
+        generateLoading.style.display = 'block';
+        resultScreen.style.display = 'none';
+        quizScreen.style.display = 'block';
+
+        const prompt = `Generate a new, unique multiple-choice question about culinary arts, suitable for a high school student. The question should have 4 answer options, with exactly one correct answer. Provide the output in JSON format with the following schema:
+        {
+            "question": "string",
+            "answers": [
+                {"text": "string", "correct": boolean},
+                {"text": "string", "correct": boolean},
+                {"text": "string", "correct": boolean},
+                {"text": "string", "correct": boolean}
+            ]
+        }
+        Ensure the question is distinct from previous questions about food handlers, hair restraints, baker's percentages, or specific event dates. Focus on general culinary techniques, ingredients, kitchen safety, or basic nutrition.`;
+
+        let chatHistory = [];
+        chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+        const payload = {
+            contents: chatHistory,
+            generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: "OBJECT",
+                    properties: {
+                        "question": { "type": "STRING" },
+                        "answers": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "text": { "type": "STRING" },
+                                    "correct": { "type": "BOOLEAN" }
+                                }
+                            }
+                        }
+                    },
+                    "propertyOrdering": ["question", "answers"]
+                }
+            }
+        };
+        const apiKey = "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if (result.candidates && result.candidates.length > 0 &&
+                result.candidates[0].content && result.candidates[0].content.parts &&
+                result.candidates[0].content.parts.length > 0) {
+                const jsonString = result.candidates[0].content.parts[0].text;
+                const newQuestion = JSON.parse(jsonString);
+                
+                // Add the new question to the beginning of the questions array
+                // So it's the first one shown when the quiz restarts
+                questions.unshift(newQuestion); 
+                currentQuestionIndex = 0;
+                score = 0;
+                showQuestion();
+            } else {
+                alert('Failed to generate a new question. Please try again.');
+                console.error('Unexpected API response structure:', result);
+                showResult(); // Go back to results if generation fails
+            }
+        } catch (error) {
+            alert('Error generating new question. Please check your network connection or try again.');
+            console.error('Error calling Gemini API for new question:', error);
+            showResult(); // Go back to results if generation fails
+        } finally {
+            generateLoading.style.display = 'none';
+            generateNewQuestionButton.style.display = 'block';
+            restartButton.style.display = 'block';
+        }
+    }
+
+    nextButton.addEventListener('click', () => {
+        currentQuestionIndex++;
+        if (currentQuestionIndex < questions.length) {
+            showQuestion();
+        } else {
+            showResult();
+        }
+    });
+
+    restartButton.addEventListener('click', () => {
+        currentQuestionIndex = 0;
+        score = 0;
+        resultScreen.style.display = 'none';
+        quizScreen.style.display = 'block';
+        showQuestion();
+    });
+
+    explainButton.addEventListener('click', explainAnswer);
+    generateNewQuestionButton.addEventListener('click', generateNewQuestion);
+
+    showQuestion();
+});
+</script>
+</body>
+</html>
